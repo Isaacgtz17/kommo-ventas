@@ -9,11 +9,18 @@
 import streamlit as st
 from datetime import datetime, timedelta
 import pandas as pd
+import os
 
 # Importar nuestras funciones y clases desde los otros archivos
 from kommo_api import get_api_data
 from data_processor import procesar_datos
 from pdf_generator import ReportGenerator, enviar_correo
+
+# --- Creación de carpetas para organización ---
+REPORTS_DIR = "reports"
+TEMP_DIR = "temp_assets"
+os.makedirs(REPORTS_DIR, exist_ok=True)
+os.makedirs(TEMP_DIR, exist_ok=True)
 
 # --- Configuración de la página ---
 st.set_page_config(
@@ -37,7 +44,6 @@ def cargar_y_procesar_datos():
         st.error("Asegúrate de que el archivo exista y que los nombres de las claves sean correctos.")
         return None
 
-    # Construir los parámetros para la API
     base_url = f"https://{subdomain}.kommo.com/api/v4"
     headers = {'Authorization': f"Bearer {access_token}"}
 
@@ -70,7 +76,7 @@ if df_master is not None and not df_master.empty:
         
         if st.sidebar.button("Generar Reporte por Periodo"):
             df_periodo = df_master[(df_master['created_at'].dt.date >= start_date) & (df_master['created_at'].dt.date <= end_date)]
-            filename = f"Reporte_Kommo_{start_date}_a_{end_date}.pdf"
+            filename = os.path.join(REPORTS_DIR, f"Reporte_Kommo_{start_date}_a_{end_date}.pdf")
             title = f"Análisis del Periodo {start_date} a {end_date}"
             
             with st.spinner("Generando reporte PDF..."):
@@ -80,7 +86,7 @@ if df_master is not None and not df_master.empty:
                 with open(generated_file, "rb") as pdf_file:
                     st.sidebar.download_button(
                         label="Descargar Reporte", data=pdf_file,
-                        file_name=generated_file, mime="application/octet-stream"
+                        file_name=os.path.basename(generated_file), mime="application/octet-stream"
                     )
                 if st.sidebar.button("Enviar por Correo"):
                      with st.spinner("Enviando correo..."):
@@ -90,14 +96,14 @@ if df_master is not None and not df_master.empty:
         st.sidebar.markdown("---")
         if st.sidebar.button("Generar Reporte Histórico"):
             with st.spinner("Generando reporte histórico..."):
-                filename = "Reporte_Historico_Kommo.pdf"
+                filename = os.path.join(REPORTS_DIR, "Reporte_Historico_Kommo.pdf")
                 generated_file = reporter.generar_reporte_por_fechas(df_master, filename, "Análisis Histórico General")
             
             if generated_file:
                 with open(generated_file, "rb") as pdf_file:
                     st.sidebar.download_button(
                         label="Descargar Reporte Histórico", data=pdf_file,
-                        file_name=generated_file, mime="application/octet-stream"
+                        file_name=os.path.basename(generated_file), mime="application/octet-stream"
                     )
                 if st.sidebar.button("Enviar Histórico por Correo"):
                     with st.spinner("Enviando correo..."):
@@ -125,7 +131,7 @@ if df_master is not None and not df_master.empty:
             df_a = df_master[(df_master['created_at'].dt.date >= start_a) & (df_master['created_at'].dt.date <= end_a)]
             df_b = df_master[(df_master['created_at'].dt.date >= start_b) & (df_master['created_at'].dt.date <= end_b)]
             
-            filename = f"Reporte_Comparativo_{start_a.strftime('%Y-%m-%d')}_vs_{start_b.strftime('%Y-%m-%d')}.pdf"
+            filename = os.path.join(REPORTS_DIR, f"Reporte_Comparativo_{start_a.strftime('%Y-%m-%d')}_vs_{start_b.strftime('%Y-%m-%d')}.pdf")
             
             with st.spinner("Generando reporte comparativo..."):
                 generated_file = reporter.generar_reporte_comparativo(df_a, df_b, f"{start_a.strftime('%Y-%m-%d')} a {end_a.strftime('%Y-%m-%d')}", f"{start_b.strftime('%Y-%m-%d')} a {end_b.strftime('%Y-%m-%d')}", filename)
@@ -134,7 +140,7 @@ if df_master is not None and not df_master.empty:
                 with open(generated_file, "rb") as pdf_file:
                     st.sidebar.download_button(
                         label="Descargar Comparativo", data=pdf_file,
-                        file_name=generated_file, mime="application/octet-stream"
+                        file_name=os.path.basename(generated_file), mime="application/octet-stream"
                     )
                 if st.sidebar.button("Enviar Comparativo por Correo"):
                     with st.spinner("Enviando correo..."):
