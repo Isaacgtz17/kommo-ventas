@@ -1,0 +1,14 @@
+# Entorno Virtual de Python
+.venv/
+venv/
+
+# Archivos de Caché de Python
+__pycache__/
+*.pyc
+
+# Archivo de caché de nuestra aplicación
+kommo_api_cache.pkl
+
+# Archivos del sistema operativo
+.DS_Store
+Thumbs.db
