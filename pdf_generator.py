@@ -16,6 +16,7 @@ from fpdf import FPDF
 from PIL import Image
 import streamlit as st
 from datetime import datetime
+import pandas as pd
 
 from config import CONFIG
 import visualizations as viz
@@ -52,7 +53,7 @@ def enviar_correo(asunto, cuerpo, archivo_adjunto):
         part.add_header("Content-Disposition", f"attachment; filename= {os.path.basename(archivo_adjunto)}")
         msg.attach(part)
 
-        server = smtplib.SMTP(cfg['smtp_server'], cfg['smtp_port'])
+        server = smtplib.SMTP(CONFIG['email_settings']['smtp_server'], CONFIG['email_settings']['smtp_port'])
         server.starttls()
         server.login(sender_email, sender_password)
         text = msg.as_string()
@@ -154,6 +155,34 @@ class PDF(FPDF):
             self.ln()
         self.ln(10)
 
+    def add_comparison_kpi_table(self, title, kpi_data):
+        self.check_page_break(20 + len(kpi_data) * 8)
+        self._chapter_title(title)
+        
+        self.set_font("Arial", "B", 10)
+        self.set_fill_color(int(CONFIG['colores']['fondo_claro'][1:3], 16), int(CONFIG['colores']['fondo_claro'][3:5], 16), int(CONFIG['colores']['fondo_claro'][5:7], 16))
+        self.cell(60, 8, "Métrica", 1, 0, 'L', 1)
+        self.cell(40, 8, "Periodo Actual", 1, 0, 'C', 1)
+        self.cell(40, 8, "Periodo Anterior", 1, 0, 'C', 1)
+        self.cell(40, 8, "Variación", 1, 1, 'C', 1)
+
+        self.set_font('Arial', '', 10)
+        for row in kpi_data:
+            self.cell(60, 8, row['metric'], 1, 0, 'L')
+            self.cell(40, 8, str(row['current']), 1, 0, 'C')
+            self.cell(40, 8, str(row['previous']), 1, 0, 'C')
+            
+            change_str = f"{row['change']:.2f}%"
+            if row['change'] > 0:
+                self.set_text_color(int(CONFIG['colores']['aumento'][1:3], 16), int(CONFIG['colores']['aumento'][3:5], 16), int(CONFIG['colores']['aumento'][5:7], 16))
+                change_str = f"+{change_str}"
+            else:
+                self.set_text_color(int(CONFIG['colores']['perdido'][1:3], 16), int(CONFIG['colores']['perdido'][3:5], 16), int(CONFIG['colores']['perdido'][5:7], 16))
+            
+            self.cell(40, 8, change_str, 1, 1, 'C')
+            self.set_text_color(int(CONFIG['colores']['texto'][1:3], 16), int(CONFIG['colores']['texto'][3:5], 16), int(CONFIG['colores']['texto'][5:7], 16))
+        self.ln(10)
+
     def check_page_break(self, required_height):
         if self.get_y() + required_height > self.h - self.b_margin:
             self.add_page()
@@ -231,6 +260,67 @@ class ReportGenerator:
 
         pdf.output(filename)
         st.success(f"✅ Reporte guardado como '{filename}'")
+        for f in files_to_clean:
+            if os.path.exists(f): os.remove(f)
+        return filename
+
+    def generar_reporte_comparativo(self, df_a, df_b, period_a_str, period_b_str, filename):
+        pdf = PDF('P', 'mm', 'A4')
+        pdf.add_page()
+
+        def get_kpis(df):
+            if df.empty:
+                return {"Leads Generados": 0, "Leads Ganados": 0, "Tasa de Conversión (%)": 0, "Valor Ganado ($)": 0, "En Proceso de Cobro ($)": 0}
+            total_leads = len(df)
+            leads_ganados = (df['estado'] == 'Ganado').sum()
+            tasa_conv = (leads_ganados / total_leads * 100) if total_leads > 0 else 0
+            valor_ganado = df[df['estado'] == 'Ganado']['price'].sum()
+            valor_en_cobro = df[df['etapa_nombre'] == 'Proceso De Cobro']['price'].sum()
+            return {
+                "Leads Generados": total_leads, "Leads Ganados": leads_ganados, 
+                "Tasa de Conversión (%)": tasa_conv, "Valor Ganado ($)": valor_ganado,
+                "En Proceso de Cobro ($)": valor_en_cobro
+            }
+
+        kpis_a = get_kpis(df_a)
+        kpis_b = get_kpis(df_b)
+        
+        comparison_data = []
+        for key in kpis_a:
+            val_a, val_b = kpis_a[key], kpis_b[key]
+            change = ((val_a - val_b) / val_b * 100) if val_b > 0 else (100.0 if val_a > 0 else 0)
+            
+            is_currency = '$' in key
+            is_percent = '%' in key
+
+            formatted_a = f"${val_a:,.2f}" if is_currency else (f"{val_a:.2f}" if is_percent else f"{val_a:,}")
+            formatted_b = f"${val_b:,.2f}" if is_currency else (f"{val_b:.2f}" if is_percent else f"{val_b:,}")
+            
+            comparison_data.append({'metric': key, 'current': formatted_a, 'previous': formatted_b, 'change': change})
+        
+        pdf.add_comparison_kpi_table(f"Comparativo: {period_a_str} vs {period_b_str}", comparison_data)
+        
+        files_to_clean = []
+        
+        img_comp_evol = "comparativo_evolucion.png"; viz.crear_grafico_evolucion_comparativo(df_a, df_b, img_comp_evol); files_to_clean.append(img_comp_evol)
+        if os.path.exists(img_comp_evol): pdf.add_image_section("Creación de Leads: Comparativo de Periodos", img_comp_evol)
+
+        if not df_a.empty:
+            rendimiento = df_a.groupby('responsable_nombre').agg(
+                Total=('id', 'count'), Ganados=('estado', lambda x: (x == 'Ganado').sum()),
+                Valor_Ganado=('price', lambda x: df_a.loc[x.index][df_a.loc[x.index, 'estado'] == 'Ganado']['price'].sum())
+            ).reset_index()
+            if not rendimiento.empty:
+                rendimiento['Tasa_Conv.'] = (rendimiento['Ganados'] / rendimiento['Total'] * 100).apply(lambda x: f"{x:.1f}%")
+                rendimiento['Valor_Ganado'] = rendimiento['Valor_Ganado'].apply(lambda x: f"${x:,.0f}")
+                rendimiento.columns = ['Ejecutivo', 'Total', 'Ganados', 'Valor Ganado', 'Tasa Conv.']
+                pdf.add_table_section(f"Rendimiento por Ejecutivo (Periodo Actual)", rendimiento, col_widths=[85, 25, 25, 30, 25])
+
+        img_funnel = "funnel_comparativo.png"; viz.crear_funnel_ejecutivo(df_a, img_funnel); files_to_clean.append(img_funnel)
+        if os.path.exists(img_funnel): pdf.add_image_section("Funnel de Conversión (Periodo Actual)", img_funnel)
+        
+        pdf.output(filename)
+        st.success(f"✅ Reporte comparativo guardado como '{filename}'")
         for f in files_to_clean:
             if os.path.exists(f): os.remove(f)
         return filename

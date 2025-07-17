@@ -8,6 +8,7 @@
 
 import streamlit as st
 from datetime import datetime, timedelta
+import pandas as pd
 
 # Importar nuestras funciones y clases desde los otros archivos
 from kommo_api import get_api_data
@@ -24,22 +25,27 @@ st.set_page_config(
 # --- Función de carga principal con caché de Streamlit ---
 @st.cache_data(ttl=3600) # Cache por 1 hora
 def cargar_y_procesar_datos():
+    """
+    Carga las credenciales de forma segura desde st.secrets y luego
+    obtiene y procesa los datos de la API.
+    """
     try:
         subdomain = st.secrets["KOMMO_SUBDOMAIN"]
         access_token = st.secrets["KOMMO_ACCESS_TOKEN"]
-    except FileNotFoundError:
-        st.error("Archivo 'secrets.toml' no encontrado. Por favor, créalo en la carpeta '.streamlit'.")
-        return None
     except KeyError as e:
-        st.error(f"Error: La credencial '{e}' no se encontró en tu archivo 'secrets.toml'.")
+        st.error(f"Error: La credencial '{e}' no se encontró en tu archivo .streamlit/secrets.toml.")
+        st.error("Asegúrate de que el archivo exista y que los nombres de las claves sean correctos.")
         return None
 
-    api_data = get_api_data(
-        base_url=f"https://{subdomain}.kommo.com/api/v4",
-        headers={'Authorization': f"Bearer {access_token}"}
-    )
-    df = procesar_datos(api_data)
-    return df
+    # Construir los parámetros para la API
+    base_url = f"https://{subdomain}.kommo.com/api/v4"
+    headers = {'Authorization': f"Bearer {access_token}"}
+
+    api_data = get_api_data(base_url, headers)
+    if api_data:
+        df = procesar_datos(api_data)
+        return df
+    return None
 
 # --- Interfaz Principal ---
 st.title("🤖 Analista de Ventas IA")
@@ -100,8 +106,8 @@ if df_master is not None and not df_master.empty:
     elif opcion == 'Comparar Periodos':
         st.sidebar.markdown("---")
         st.sidebar.subheader("Periodo Actual (A)")
-        start_a = st.sidebar.date_input("Fecha de inicio (A)", df_master['created_at'].max() - timedelta(days=7))
-        end_a = st.sidebar.date_input("Fecha de fin (A)", df_master['created_at'].max())
+        start_a = st.sidebar.date_input("Fecha de inicio (A)", df_master['created_at'].max().date() - timedelta(days=6))
+        end_a = st.sidebar.date_input("Fecha de fin (A)", df_master['created_at'].max().date())
         
         st.sidebar.subheader("Periodo Anterior (B)")
         auto_mode = st.sidebar.checkbox("Calcular periodo anterior automáticamente", True)
@@ -112,8 +118,8 @@ if df_master is not None and not df_master.empty:
             end_b = end_a - delta - timedelta(days=1)
             st.sidebar.info(f"Periodo anterior calculado: {start_b.strftime('%Y-%m-%d')} a {end_b.strftime('%Y-%m-%d')}")
         else:
-            start_b = st.sidebar.date_input("Fecha de inicio (B)", df_master['created_at'].max() - timedelta(days=14))
-            end_b = st.sidebar.date_input("Fecha de fin (B)", df_master['created_at'].max() - timedelta(days=8))
+            start_b = st.sidebar.date_input("Fecha de inicio (B)", df_master['created_at'].max().date() - timedelta(days=14))
+            end_b = st.sidebar.date_input("Fecha de fin (B)", df_master['created_at'].max().date() - timedelta(days=8))
 
         if st.sidebar.button("Generar Reporte Comparativo"):
             df_a = df_master[(df_master['created_at'].dt.date >= start_a) & (df_master['created_at'].dt.date <= end_a)]
@@ -122,10 +128,7 @@ if df_master is not None and not df_master.empty:
             filename = f"Reporte_Comparativo_{start_a.strftime('%Y-%m-%d')}_vs_{start_b.strftime('%Y-%m-%d')}.pdf"
             
             with st.spinner("Generando reporte comparativo..."):
-                # La función de comparación aún no está en pdf_generator.py, la añadiremos después.
-                # Por ahora, esto es un placeholder.
-                st.warning("La generación de reportes comparativos está en desarrollo.")
-                generated_file = None
+                generated_file = reporter.generar_reporte_comparativo(df_a, df_b, f"{start_a.strftime('%Y-%m-%d')} a {end_a.strftime('%Y-%m-%d')}", f"{start_b.strftime('%Y-%m-%d')} a {end_b.strftime('%Y-%m-%d')}", filename)
 
             if generated_file:
                 with open(generated_file, "rb") as pdf_file:
