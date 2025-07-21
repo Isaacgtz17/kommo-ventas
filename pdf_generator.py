@@ -21,24 +21,21 @@ import pandas as pd
 from config import CONFIG
 import visualizations as viz
 
-TEMP_DIR = "temp_assets"
-
 # =============================================================================
-# FUNCIÓN DE ENVÍO DE CORREO
+# FUNCIÓN DE ENVÍO DE CORREO (VERSIÓN MEJORADA)
 # =============================================================================
 def enviar_correo(asunto, cuerpo, archivo_adjunto):
     """Envía un correo electrónico con un archivo adjunto al destinatario configurado."""
     try:
+        # Acceder a la tabla de configuración de correo en secrets.toml
         cfg = st.secrets['email_settings']
         destinatario = cfg['recipient_email']
         sender_email = cfg['sender_email']
         sender_password = cfg['sender_password']
-    except (FileNotFoundError, KeyError):
-        st.error("Error: Credenciales de correo no encontradas en .streamlit/secrets.toml")
-        return
-
-    if not all([sender_email, sender_password, destinatario]):
-        st.warning("La función de envío de correo no está completamente configurada en secrets.toml.")
+        smtp_server = cfg['smtp_server']
+        smtp_port = cfg['smtp_port']
+    except KeyError as e:
+        st.error(f"Error: La credencial de correo '{e}' no se encontró en la sección [email_settings] de tu archivo .streamlit/secrets.toml")
         return
 
     msg = MIMEMultipart()
@@ -55,7 +52,7 @@ def enviar_correo(asunto, cuerpo, archivo_adjunto):
         part.add_header("Content-Disposition", f"attachment; filename= {os.path.basename(archivo_adjunto)}")
         msg.attach(part)
 
-        server = smtplib.SMTP(CONFIG['email_settings']['smtp_server'], CONFIG['email_settings']['smtp_port'])
+        server = smtplib.SMTP(smtp_server, smtp_port)
         server.starttls()
         server.login(sender_email, sender_password)
         text = msg.as_string()
@@ -65,13 +62,13 @@ def enviar_correo(asunto, cuerpo, archivo_adjunto):
     except FileNotFoundError:
         st.error(f"❌ Error: No se encontró el archivo adjunto '{archivo_adjunto}'")
     except smtplib.SMTPAuthenticationError:
-        st.error("❌ Error de autenticación SMTP. Verifica tu correo y contraseña de aplicación.")
+        st.error("❌ Error de autenticación SMTP. Verifica tu correo y, sobre todo, tu contraseña de aplicación.")
     except Exception as e:
         st.error(f"❌ Ocurrió un error al enviar el correo: {e}")
 
 
 # =============================================================================
-# CLASE PDF
+# CLASE PDF (Sin cambios)
 # =============================================================================
 class PDF(FPDF):
     def header(self):
@@ -232,36 +229,36 @@ class ReportGenerator:
 
             delta_dias = (df_periodo['created_at'].max() - df_periodo['created_at'].min()).days
             freq = 'D' if delta_dias <= 15 else 'W' if delta_dias <= 90 else 'M'
-            img_evolucion = os.path.join(TEMP_DIR, "evolucion_periodo.png"); viz.crear_grafico_evolucion(df_periodo, img_evolucion, freq=freq, title='Creación de Leads'); files_to_clean.append(img_evolucion)
+            img_evolucion = "evolucion_periodo.png"; viz.crear_grafico_evolucion(df_periodo, img_evolucion, freq=freq, title='Creación de Leads'); files_to_clean.append(img_evolucion)
             pdf.add_image_section("Creación de Leads en el Periodo", img_evolucion)
 
             resp_data = df_periodo['responsable_nombre'].value_counts().sort_values()
-            img_resp = os.path.join(TEMP_DIR, "responsables_periodo.png"); viz.crear_grafico_barras_h(resp_data, 'Distribución de Leads por Responsable', 'Cantidad de Leads', 'Ejecutivo', img_resp); files_to_clean.append(img_resp)
+            img_resp = "responsables_periodo.png"; viz.crear_grafico_barras_h(resp_data, 'Distribución de Leads por Responsable', 'Cantidad de Leads', 'Ejecutivo', img_resp); files_to_clean.append(img_resp)
             pdf.add_image_section("Distribución de Leads por Responsable", img_resp)
 
             etapa_data = df_periodo['etapa_nombre'].value_counts().sort_values()
-            img_etapas = os.path.join(TEMP_DIR, "etapas_periodo.png"); viz.crear_grafico_barras_h(etapa_data, 'Distribución de Leads por Etapa Actual', 'Cantidad de Leads', 'Etapa', img_etapas); files_to_clean.append(img_etapas)
+            img_etapas = "etapas_periodo.png"; viz.crear_grafico_barras_h(etapa_data, 'Distribución de Leads por Etapa Actual', 'Cantidad de Leads', 'Etapa', img_etapas); files_to_clean.append(img_etapas)
             pdf.add_image_section("Distribución de Leads por Etapa Actual", img_etapas)
             
-            img_salud = os.path.join(TEMP_DIR, "salud_periodo.png"); viz.crear_grafico_salud_leads(df_periodo, img_salud); files_to_clean.append(img_salud)
+            img_salud = "salud_periodo.png"; viz.crear_grafico_salud_leads(df_periodo, img_salud); files_to_clean.append(img_salud)
             if os.path.exists(img_salud): pdf.add_image_section("Salud de Leads en Trámite", img_salud)
 
-        img_funnel = os.path.join(TEMP_DIR, "funnel_periodo.png"); viz.crear_funnel_ejecutivo(df_periodo, img_funnel); files_to_clean.append(img_funnel)
+        img_funnel = "funnel_periodo.png"; viz.crear_funnel_ejecutivo(df_periodo, img_funnel); files_to_clean.append(img_funnel)
         if os.path.exists(img_funnel): pdf.add_image_section("Funnel de Conversión por Ejecutivo", img_funnel)
         
         tags_series = df_periodo.explode('tags')['tags'].dropna()
         if not tags_series.empty:
             top_tags = tags_series.value_counts().nlargest(10).sort_values()
-            img_tags = os.path.join(TEMP_DIR, "tags_periodo.png"); viz.crear_grafico_barras_h(top_tags, 'Servicios Más Solicitados (Top 10 Tags)', 'Cantidad de Leads', 'Servicio/Tag', img_tags); files_to_clean.append(img_tags)
+            img_tags = "tags_periodo.png"; viz.crear_grafico_barras_h(top_tags, 'Servicios Más Solicitados (Top 10 Tags)', 'Cantidad de Leads', 'Servicio/Tag', img_tags); files_to_clean.append(img_tags)
             pdf.add_image_section("Servicios Más Solicitados (Basado en Etiquetas)", img_tags)
 
         loss_data = df_periodo[df_periodo['estado'] == 'Perdido']['motivo_perdida_nombre'].value_counts()
         if not loss_data.empty:
-            img_perdida = os.path.join(TEMP_DIR, "perdida_periodo.png"); viz.crear_grafico_dona(loss_data, 'Principales Motivos de Pérdida', img_perdida); files_to_clean.append(img_perdida)
+            img_perdida = "perdida_periodo.png"; viz.crear_grafico_dona(loss_data, 'Principales Motivos de Pérdida', img_perdida); files_to_clean.append(img_perdida)
             pdf.add_image_section("Análisis de Motivos de Pérdida", img_perdida)
 
         pdf.output(filename)
-        st.success(f"✅ Reporte guardado en la carpeta 'reports'.")
+        st.success(f"✅ Reporte guardado como '{filename}'")
         for f in files_to_clean:
             if os.path.exists(f): os.remove(f)
         return filename
@@ -304,7 +301,7 @@ class ReportGenerator:
         
         files_to_clean = []
         
-        img_comp_evol = os.path.join(TEMP_DIR, "comparativo_evolucion.png"); viz.crear_grafico_evolucion_comparativo(df_a, df_b, img_comp_evol); files_to_clean.append(img_comp_evol)
+        img_comp_evol = "comparativo_evolucion.png"; viz.crear_grafico_evolucion_comparativo(df_a, df_b, img_comp_evol); files_to_clean.append(img_comp_evol)
         if os.path.exists(img_comp_evol): pdf.add_image_section("Creación de Leads: Comparativo de Periodos", img_comp_evol)
 
         if not df_a.empty:
@@ -318,7 +315,7 @@ class ReportGenerator:
                 rendimiento.columns = ['Ejecutivo', 'Total', 'Ganados', 'Valor Ganado', 'Tasa Conv.']
                 pdf.add_table_section(f"Rendimiento por Ejecutivo (Periodo Actual)", rendimiento, col_widths=[85, 25, 25, 30, 25])
 
-        img_funnel = os.path.join(TEMP_DIR, "funnel_comparativo.png"); viz.crear_funnel_ejecutivo(df_a, img_funnel); files_to_clean.append(img_funnel)
+        img_funnel = "funnel_comparativo.png"; viz.crear_funnel_ejecutivo(df_a, img_funnel); files_to_clean.append(img_funnel)
         if os.path.exists(img_funnel): pdf.add_image_section("Funnel de Conversión (Periodo Actual)", img_funnel)
         
         pdf.output(filename)

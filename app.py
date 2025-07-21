@@ -24,8 +24,8 @@ os.makedirs(TEMP_DIR, exist_ok=True)
 
 # --- Configuración de la página ---
 st.set_page_config(
-    page_title="Analista de Ventas IA",
-    page_icon="🤖",
+    page_title="Analista de GMG",
+    page_icon="",
     layout="wide"
 )
 
@@ -54,7 +54,7 @@ def cargar_y_procesar_datos():
     return None
 
 # --- Interfaz Principal ---
-st.title("🤖 Analista de Ventas IA")
+st.title(" Analista de Ventas GMG")
 st.markdown("### Grúas Móviles del Golfo")
 
 df_master = cargar_y_procesar_datos()
