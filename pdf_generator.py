@@ -24,12 +24,10 @@ import visualizations as viz
 # =============================================================================
 # FUNCIÓN DE ENVÍO DE CORREO (VERSIÓN MEJORADA)
 # =============================================================================
-def enviar_correo(asunto, cuerpo, archivo_adjunto):
-    """Envía un correo electrónico con un archivo adjunto al destinatario configurado."""
+def enviar_correo(destinatario, asunto, cuerpo, archivo_adjunto):
+    """Envía un correo electrónico con un archivo adjunto."""
     try:
-        # Acceder a la tabla de configuración de correo en secrets.toml
         cfg = st.secrets['email_settings']
-        destinatario = cfg['recipient_email']
         sender_email = cfg['sender_email']
         sender_password = cfg['sender_password']
         smtp_server = cfg['smtp_server']
@@ -58,13 +56,13 @@ def enviar_correo(asunto, cuerpo, archivo_adjunto):
         text = msg.as_string()
         server.sendmail(sender_email, destinatario, text)
         server.quit()
-        st.success(f"✅ Correo enviado exitosamente a {destinatario}")
+        st.sidebar.success(f"✅ Correo enviado a {destinatario}")
     except FileNotFoundError:
-        st.error(f"❌ Error: No se encontró el archivo adjunto '{archivo_adjunto}'")
+        st.sidebar.error(f"❌ Error: No se encontró el archivo '{archivo_adjunto}'")
     except smtplib.SMTPAuthenticationError:
-        st.error("❌ Error de autenticación SMTP. Verifica tu correo y, sobre todo, tu contraseña de aplicación.")
+        st.sidebar.error("❌ Error de autenticación SMTP. Verifica tu contraseña de aplicación.")
     except Exception as e:
-        st.error(f"❌ Ocurrió un error al enviar el correo: {e}")
+        st.sidebar.error(f"❌ Error al enviar: {e}")
 
 
 # =============================================================================

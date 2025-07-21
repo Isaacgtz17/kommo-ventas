@@ -16,16 +16,10 @@ from kommo_api import get_api_data
 from data_processor import procesar_datos
 from pdf_generator import ReportGenerator, enviar_correo
 
-# --- Creación de carpetas para organización ---
-REPORTS_DIR = "reports"
-TEMP_DIR = "temp_assets"
-os.makedirs(REPORTS_DIR, exist_ok=True)
-os.makedirs(TEMP_DIR, exist_ok=True)
-
 # --- Configuración de la página ---
 st.set_page_config(
-    page_title="Analista de GMG",
-    page_icon="",
+    page_title="Analista de Ventas IA",
+    page_icon="🤖",
     layout="wide"
 )
 
@@ -53,8 +47,12 @@ def cargar_y_procesar_datos():
         return df
     return None
 
+# --- Inicialización del estado de la sesión ---
+if 'generated_file' not in st.session_state:
+    st.session_state.generated_file = None
+
 # --- Interfaz Principal ---
-st.title(" Analista de Ventas GMG")
+st.title("🤖 Analista de Ventas IA")
 st.markdown("### Grúas Móviles del Golfo")
 
 df_master = cargar_y_procesar_datos()
@@ -66,9 +64,11 @@ if df_master is not None and not df_master.empty:
     st.sidebar.title("Panel de Control")
     opcion = st.sidebar.radio(
         "Elige una opción:",
-        ('Análisis por Periodo', 'Reporte Histórico Completo', 'Comparar Periodos')
+        ('Análisis por Periodo', 'Reporte Histórico Completo', 'Comparar Periodos'),
+        key='report_option' # Key para que el estado no se reinicie al cambiar de opción
     )
 
+    # --- Lógica para cada opción del panel ---
     if opcion == 'Análisis por Periodo':
         st.sidebar.markdown("---")
         start_date = st.sidebar.date_input("Fecha de inicio", df_master['created_at'].min())
@@ -76,39 +76,19 @@ if df_master is not None and not df_master.empty:
         
         if st.sidebar.button("Generar Reporte por Periodo"):
             df_periodo = df_master[(df_master['created_at'].dt.date >= start_date) & (df_master['created_at'].dt.date <= end_date)]
-            filename = os.path.join(REPORTS_DIR, f"Reporte_Kommo_{start_date}_a_{end_date}.pdf")
+            filename = f"Reporte_Kommo_{start_date}_a_{end_date}.pdf"
             title = f"Análisis del Periodo {start_date} a {end_date}"
             
             with st.spinner("Generando reporte PDF..."):
-                generated_file = reporter.generar_reporte_por_fechas(df_periodo, filename, title)
-            
-            if generated_file:
-                with open(generated_file, "rb") as pdf_file:
-                    st.sidebar.download_button(
-                        label="Descargar Reporte", data=pdf_file,
-                        file_name=os.path.basename(generated_file), mime="application/octet-stream"
-                    )
-                if st.sidebar.button("Enviar por Correo"):
-                     with st.spinner("Enviando correo..."):
-                        enviar_correo(f"Reporte de Ventas: {start_date} a {end_date}", "Adjunto reporte de ventas.", generated_file)
+                st.session_state.generated_file = reporter.generar_reporte_por_fechas(df_periodo, filename, title)
 
     elif opcion == 'Reporte Histórico Completo':
         st.sidebar.markdown("---")
         if st.sidebar.button("Generar Reporte Histórico"):
             with st.spinner("Generando reporte histórico..."):
-                filename = os.path.join(REPORTS_DIR, "Reporte_Historico_Kommo.pdf")
-                generated_file = reporter.generar_reporte_por_fechas(df_master, filename, "Análisis Histórico General")
+                filename = "Reporte_Historico_Kommo.pdf"
+                st.session_state.generated_file = reporter.generar_reporte_por_fechas(df_master, filename, "Análisis Histórico General")
             
-            if generated_file:
-                with open(generated_file, "rb") as pdf_file:
-                    st.sidebar.download_button(
-                        label="Descargar Reporte Histórico", data=pdf_file,
-                        file_name=os.path.basename(generated_file), mime="application/octet-stream"
-                    )
-                if st.sidebar.button("Enviar Histórico por Correo"):
-                    with st.spinner("Enviando correo..."):
-                        enviar_correo("Reporte Histórico de Ventas", "Adjunto reporte histórico de ventas.", generated_file)
-
     elif opcion == 'Comparar Periodos':
         st.sidebar.markdown("---")
         st.sidebar.subheader("Periodo Actual (A)")
@@ -131,20 +111,33 @@ if df_master is not None and not df_master.empty:
             df_a = df_master[(df_master['created_at'].dt.date >= start_a) & (df_master['created_at'].dt.date <= end_a)]
             df_b = df_master[(df_master['created_at'].dt.date >= start_b) & (df_master['created_at'].dt.date <= end_b)]
             
-            filename = os.path.join(REPORTS_DIR, f"Reporte_Comparativo_{start_a.strftime('%Y-%m-%d')}_vs_{start_b.strftime('%Y-%m-%d')}.pdf")
+            filename = f"Reporte_Comparativo_{start_a.strftime('%Y-%m-%d')}_vs_{start_b.strftime('%Y-%m-%d')}.pdf"
             
             with st.spinner("Generando reporte comparativo..."):
-                generated_file = reporter.generar_reporte_comparativo(df_a, df_b, f"{start_a.strftime('%Y-%m-%d')} a {end_a.strftime('%Y-%m-%d')}", f"{start_b.strftime('%Y-%m-%d')} a {end_b.strftime('%Y-%m-%d')}", filename)
+                st.session_state.generated_file = reporter.generar_reporte_comparativo(df_a, df_b, f"{start_a.strftime('%Y-%m-%d')} a {end_a.strftime('%Y-%m-%d')}", f"{start_b.strftime('%Y-%m-%d')} a {end_b.strftime('%Y-%m-%d')}", filename)
 
-            if generated_file:
-                with open(generated_file, "rb") as pdf_file:
-                    st.sidebar.download_button(
-                        label="Descargar Comparativo", data=pdf_file,
-                        file_name=os.path.basename(generated_file), mime="application/octet-stream"
-                    )
-                if st.sidebar.button("Enviar Comparativo por Correo"):
-                    with st.spinner("Enviando correo..."):
-                        enviar_correo("Reporte Comparativo de Ventas", "Adjunto reporte comparativo de ventas.", generated_file)
+    # --- Sección de Descarga y Envío (si se ha generado un archivo) ---
+    if st.session_state.generated_file:
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("Acciones del Reporte")
+        
+        with open(st.session_state.generated_file, "rb") as pdf_file:
+            st.sidebar.download_button(
+                label="Descargar Reporte", data=pdf_file,
+                file_name=os.path.basename(st.session_state.generated_file), mime="application/octet-stream"
+            )
+
+        with st.sidebar.form(key='email_form'):
+            recipient = st.text_input("Correo del destinatario", value=st.secrets.get('email_settings', {}).get('recipient_email', ''))
+            submit_button = st.form_submit_button(label='Enviar por Correo')
+
+            if submit_button:
+                if recipient:
+                    asunto = f"Reporte de Ventas: {os.path.basename(st.session_state.generated_file)}"
+                    cuerpo = "Adjunto se encuentra el reporte de análisis de ventas solicitado."
+                    enviar_correo(recipient, asunto, cuerpo, st.session_state.generated_file)
+                else:
+                    st.warning("Por favor, introduce un correo electrónico.")
 
     st.markdown("---")
     st.header("Chat con tu Analista IA (Próximamente)")
