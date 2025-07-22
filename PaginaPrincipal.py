@@ -244,7 +244,7 @@ else:
 
     with viz_col1:
         funnel_data = df_filtered.groupby(['responsable_nombre', 'estado']).size().reset_index(name='counts')
-        fig_funnel = px.bar(funnel_data, x='counts', y='responsable_nombre', color='estado', orientation='h', title='Funnel de Conversión por Ejecutivo', labels={'counts': 'Cantidad de Leads', 'responsable_nombre': 'Ejecutivo'}, color_discrete_map={'Ganado': '#28a745', 'En Trámite': '#ffc107', 'Perdido': '#dc3545'})
+        fig_funnel = px.bar(funnel_data, x='counts', y='responsable_nombre', color='estado', orientation='h', title='Funnel de Conversión por Ejecutivo', labels={'counts': 'Cantidad de Leads', 'responsable_nombre': 'Ejecutivo'}, color_discrete_map={'Ganado': '#28a745', 'En Trámite': '#ffc107', 'Proceso de Cobro': '#050E51', 'Perdido': '#dc3545'})
         fig_funnel.update_layout(yaxis={'categoryorder':'total ascending'})
         st.plotly_chart(fig_funnel, use_container_width=True, key="funnel_chart")
 

@@ -87,7 +87,7 @@ def crear_funnel_ejecutivo(df, filename):
         if col not in funnel_data.columns: funnel_data[col] = 0
     funnel_perc = funnel_data.div(funnel_data.sum(axis=1), axis=0) * 100
     funnel_perc = funnel_perc[['Ganado', 'En Trámite', 'Perdido']]
-    funnel_colors = [CONFIG['colores']['ganado'], CONFIG['colores']['en_tramite'], CONFIG['colores']['perdido']]
+    funnel_colors = [CONFIG['colores']['ganado'], CONFIG['colores']['en_tramite'], CONFIG['colores']['proceso_cobro'], CONFIG['colores']['perdido']]
     funnel_perc.plot(kind='barh', stacked=True, color=funnel_colors, figsize=(12, 8), width=0.8)
     plt.title('Funnel de Conversión por Ejecutivo', fontsize=16, color=CONFIG['colores']['texto'])
     plt.xlabel('Porcentaje de Leads (%)'); plt.ylabel('Ejecutivo')
