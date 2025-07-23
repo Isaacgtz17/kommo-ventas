@@ -1,0 +1,11 @@
+streamlit
+pandas
+numpy
+requests
+fpdf2
+Pillow
+plotly
+pytz
+scikit-learn
+matplotlib
+seaborn
