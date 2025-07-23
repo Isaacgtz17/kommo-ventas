@@ -81,7 +81,6 @@ def get_date_range(period, min_date, max_date):
     return start_date, end_date
 
 def create_sparkline(data, date_col, metric_col):
-    # CORRECCIÓN: Asegurarse de que no hay fechas nulas antes de procesar
     data_cleaned = data.dropna(subset=[date_col])
     if data_cleaned.empty:
         fig = go.Figure()
@@ -243,3 +242,52 @@ else:
             column_config={"price": st.column_config.NumberColumn("Valor", format="$ %d")},
             hide_index=True, use_container_width=True
         )
+        
+    # --- ANÁLISIS DE MOTIVOS DE PÉRDIDA (MEJORADO) ---
+    st.markdown("---")
+    st.header("Análisis de Motivos de Pérdida")
+    
+    df_perdidos = df_filtered[df_filtered['estado'] == 'Perdido']
+    
+    if df_perdidos.empty:
+        st.info("No hay leads perdidos en el periodo seleccionado para analizar.")
+    else:
+        loss_reason_counts = df_perdidos['motivo_perdida_nombre'].value_counts().reset_index()
+        loss_reason_counts.columns = ['motivo', 'cantidad']
+        
+        fig_loss = px.bar(
+            loss_reason_counts, x='cantidad', y='motivo', orientation='h',
+            title='Principales Motivos de Pérdida',
+            labels={'cantidad': 'Cantidad de Leads', 'motivo': 'Motivo de Pérdida'}
+        )
+        fig_loss.update_layout(yaxis={'categoryorder':'total ascending'})
+        st.plotly_chart(fig_loss, use_container_width=True)
+        
+        # Ayudante de diagnóstico
+        with st.expander("Ver todos los motivos de pérdida detectados"):
+            st.dataframe(loss_reason_counts)
+            
+        st.markdown("#### Análisis Detallado por Etiquetas")
+        
+        def create_loss_reason_analysis(df_perdidos, reason_text, expander_title, column_title):
+            with st.expander(expander_title):
+                # Búsqueda flexible (contiene el texto, ignora mayúsculas/minúsculas)
+                df_reason = df_perdidos[df_perdidos['motivo_perdida_nombre'].str.contains(reason_text, case=False, na=False)]
+                if df_reason.empty:
+                    st.write("No se perdieron leads por este motivo en el periodo seleccionado.")
+                else:
+                    tags_count = df_reason.explode('tags')['tags'].value_counts().reset_index()
+                    tags_count.columns = ['Unidad (Etiqueta)', column_title]
+                    st.dataframe(tags_count, use_container_width=True)
+
+        # Define los motivos de pérdida a analizar
+        motivos_a_analizar = {
+            'Unidad Ocupada': 'Veces Solicitada',
+            'Unidad Sin Operador': 'Veces sin Operador',
+            'Unidad fuera de servicio': 'Veces Fuera de Servicio'
+        }
+        
+        cols = st.columns(len(motivos_a_analizar))
+        for i, (motivo, col_title) in enumerate(motivos_a_analizar.items()):
+            with cols[i]:
+                create_loss_reason_analysis(df_perdidos, motivo, f"Análisis de '{motivo}'", col_title)
