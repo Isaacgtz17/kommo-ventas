@@ -19,7 +19,7 @@ CONFIG = {
         'borde': '#DCDCDC',
         'ganado': '#28a745',
         'en_tramite': '#ffc107',
-        'proceso_cobro': "#050E51",
+        'proceso_cobro': "#DE3293",
         'perdido': '#dc3545',
         'aumento': '#28a745',
         'disminucion': '#dc3545'
