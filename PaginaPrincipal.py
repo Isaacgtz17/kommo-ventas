@@ -17,6 +17,9 @@ st.set_page_config(
     layout="wide"
 )
 
+# --- Constante de Zona Horaria ---
+LOCAL_TIMEZONE = pytz.timezone('America/Mexico_City')
+
 # --- Funciones Auxiliares ---
 @st.cache_data(ttl=3600)
 def cargar_y_procesar_datos():
@@ -38,11 +41,7 @@ def cargar_y_procesar_datos():
     return df
 
 def get_date_range(period, min_date, max_date):
-    try:
-        mexico_tz = pytz.timezone('America/Mexico_City')
-    except pytz.UnknownTimeZoneError:
-        mexico_tz = pytz.timezone('UTC')
-    today = datetime.now(mexico_tz).date()
+    today = datetime.now(LOCAL_TIMEZONE).date()
     effective_end_date = min(today, max_date)
     start_date, end_date = None, None
     if period == "Hoy": start_date, end_date = effective_end_date, effective_end_date
@@ -64,6 +63,7 @@ def create_sparkline(data, date_col, metric_col):
     if data_cleaned.empty:
         fig = go.Figure()
     else:
+        data_cleaned[date_col] = data_cleaned[date_col].dt.tz_convert(LOCAL_TIMEZONE)
         daily_data = data_cleaned.set_index(date_col).resample('D')[metric_col].sum()
         fig = go.Figure(go.Scatter(
             x=daily_data.index, y=daily_data, mode='lines',
@@ -93,18 +93,13 @@ if df_master is None or df_master.empty:
     st.warning("No se pudieron cargar los datos o no hay leads disponibles.")
     st.stop()
 
-# --- SECCIÓN: MONITOR DEL DÍA (DISEÑO MEJORADO) ---
-st.header(f"Monitor del Día - {datetime.now(pytz.timezone('America/Mexico_City')).strftime('%A, %d de %B de %Y')}")
+# --- SECCIÓN: MONITOR DEL DÍA ---
+st.header(f"Monitor del Día - {datetime.now(LOCAL_TIMEZONE).strftime('%A, %d de %B de %Y')}")
 
 with st.container(border=True):
-    try:
-        mexico_tz = pytz.timezone('America/Mexico_City')
-    except pytz.UnknownTimeZoneError:
-        mexico_tz = pytz.timezone('UTC')
-    today_date = datetime.now(mexico_tz).date()
-
-    df_today_created = df_master[pd.to_datetime(df_master['created_at']).dt.date == today_date]
-    df_today_updated = df_master[pd.to_datetime(df_master['updated_at']).dt.date == today_date]
+    today_date = datetime.now(LOCAL_TIMEZONE).date()
+    df_today_created = df_master[df_master['created_at'].dt.tz_convert(LOCAL_TIMEZONE).dt.date == today_date]
+    df_today_updated = df_master[df_master['updated_at'].dt.tz_convert(LOCAL_TIMEZONE).dt.date == today_date]
 
     leads_creados_hoy = len(df_today_created)
     movidos_a_cobro_hoy_df = df_today_updated[df_today_updated['estado'] == 'Proceso de Cobro']
@@ -136,8 +131,6 @@ with st.container(border=True):
             st.metric("💵 Valor Movido a Cobro", f"${valor_movido_a_cobro_hoy:,.2f}", help="Suma del valor de los leads que cambiaron a 'Proceso de Cobro' hoy.")
 
     st.markdown("<br>", unsafe_allow_html=True)
-
-    # --- NUEVA DISPOSICIÓN VERTICAL PARA SIMETRÍA ---
     with st.container(border=True):
         st.markdown("#### 📊 Rendimiento de Ejecutivos (Hoy)")
         if not df_today_created.empty:
@@ -148,29 +141,24 @@ with st.container(border=True):
             st.plotly_chart(fig_rendimiento, use_container_width=True)
         else:
             st.info("Aún no hay leads creados hoy.")
-
     st.markdown("<br>", unsafe_allow_html=True)
-
     with st.container(border=True):
         st.markdown("#### ⚡ Actividad Reciente del Día")
-        df_master['fecha_evento'] = pd.to_datetime(df_master['updated_at'])
+        df_master['fecha_evento'] = df_master['updated_at'].dt.tz_convert(LOCAL_TIMEZONE)
         df_eventos_hoy = df_master[df_master['fecha_evento'].dt.date == today_date].copy()
         df_eventos_hoy['evento'] = "Actualizado: " + df_eventos_hoy['estado']
-        df_eventos_hoy.loc[pd.to_datetime(df_eventos_hoy['created_at']).dt.date == today_date, 'evento'] = 'Creado'
-        df_eventos_hoy.loc[pd.to_datetime(df_eventos_hoy['closed_at']).dt.date == today_date, 'evento'] = 'Cerrado: ' + df_eventos_hoy['estado']
+        df_eventos_hoy.loc[df_eventos_hoy['created_at'].dt.tz_convert(LOCAL_TIMEZONE).dt.date == today_date, 'evento'] = 'Creado'
+        df_eventos_hoy.loc[df_eventos_hoy['closed_at'].dt.tz_convert(LOCAL_TIMEZONE).dt.date == today_date, 'evento'] = 'Cerrado: ' + df_eventos_hoy['estado']
         df_eventos_hoy['etiquetas'] = df_eventos_hoy['tags'].apply(lambda x: ', '.join(x) if isinstance(x, list) and x else 'N/A')
         df_eventos_hoy = df_eventos_hoy.sort_values('fecha_evento', ascending=False)
         st.dataframe(
             df_eventos_hoy[['name', 'responsable_nombre', 'price', 'etiquetas', 'evento', 'fecha_evento']],
             column_config={
-                "name": "Lead",
-                "responsable_nombre": "Ejecutivo",
+                "name": "Lead", "responsable_nombre": "Ejecutivo",
                 "price": st.column_config.NumberColumn("Precio", format="$%d"),
-                "etiquetas": "Etiquetas",
-                "evento": "Última Actividad",
+                "etiquetas": "Etiquetas", "evento": "Última Actividad",
                 "fecha_evento": st.column_config.TimeColumn("Hora", format="h:mm a")
-            },
-            use_container_width=True
+            }, use_container_width=True
         )
 
 # --- SECCIÓN DE ANÁLISIS HISTÓRICO ---
@@ -179,8 +167,8 @@ st.header("Análisis Histórico y Búsqueda")
 
 col1, col2, col3, col4 = st.columns([2, 2, 1.5, 1.5])
 with col1:
-    min_date_hist = df_master['created_at'].min().date()
-    max_date_hist = df_master['created_at'].max().date()
+    min_date_hist = df_master['created_at'].dt.date.min()
+    max_date_hist = df_master['created_at'].dt.date.max()
     date_options = ["Manual", "Ayer", "Últimos 7 días", "Últimos 30 días", "Esta semana", "Este mes", "Mes pasado", "Todo el tiempo"]
     selected_period = st.selectbox("Selecciona un periodo", options=date_options, index=2)
     is_manual = selected_period == "Manual"
@@ -203,15 +191,17 @@ with col3:
 with col4:
     search_query = st.text_input("Buscar por Nombre/Folio", placeholder="Escribe para buscar...")
 
-# --- Filtrado de Datos para Análisis Histórico ---
 if not selected_executives or not selected_statuses:
     st.warning("Por favor, selecciona al menos un ejecutivo y un estado para el análisis histórico.")
     st.stop()
 
-start_datetime, end_datetime = pd.to_datetime(selected_start), pd.to_datetime(selected_end)
+# --- CORRECCIÓN DEL TypeError ---
+# Comparamos la parte de la fecha (.dt.date) de la columna con las fechas seleccionadas
 df_filtered = df_master[
-    (df_master['created_at'] >= start_datetime) & (df_master['created_at'] <= end_datetime + timedelta(days=1)) &
-    (df_master['responsable_nombre'].isin(selected_executives)) & (df_master['estado'].isin(selected_statuses))
+    (df_master['created_at'].dt.tz_convert(LOCAL_TIMEZONE).dt.date >= selected_start) & 
+    (df_master['created_at'].dt.tz_convert(LOCAL_TIMEZONE).dt.date <= selected_end) &
+    (df_master['responsable_nombre'].isin(selected_executives)) & 
+    (df_master['estado'].isin(selected_statuses))
 ]
 if search_query:
     df_filtered = df_filtered[df_filtered['name'].str.contains(search_query, case=False, na=False)]
@@ -220,7 +210,6 @@ if df_filtered.empty:
     st.warning("No hay datos para los filtros seleccionados en el análisis histórico.")
     st.stop()
 
-# --- KPIs Históricos ---
 st.markdown("---")
 st.header("Indicadores Clave del Periodo Seleccionado")
 kpi_cols = st.columns(5)
@@ -249,7 +238,6 @@ kpi_cols[2].metric(label="Tasa de Conversión", value=f"{tasa_conversion:.2f}%")
 kpi_cols[3].metric(label="Valor Total Concluido", value=f"${valor_total_concluido:,.2f}")
 kpi_cols[4].metric(label="Ciclo de Venta Promedio (días)", value=f"{ciclo_venta_promedio:.1f}" if pd.notna(ciclo_venta_promedio) else "N/A")
 
-# --- Visualizaciones Históricas ---
 st.markdown("---")
 st.header("Visualizaciones del Periodo")
 viz_col1, viz_col2 = st.columns(2)
@@ -272,7 +260,6 @@ with viz_col2:
     fig_health = px.pie(health_counts, values='counts', names='salud_lead', title='Salud de la Cartera de Leads Activos', hole=0.4, color='salud_lead', color_discrete_map=health_colors)
     st.plotly_chart(fig_health, use_container_width=True, key="health_chart_hist")
 
-# --- Tablas Detalladas Históricas ---
 st.markdown("---")
 st.header("Datos Detallados del Periodo")
 tab1, tab2 = st.tabs(["🚨 Leads Críticos", "🏆 Ventas Concluidas"])
@@ -286,7 +273,6 @@ with tab2:
                    column_config={"price": st.column_config.NumberColumn("Valor", format="$ %d")},
                    hide_index=True, use_container_width=True)
 
-# --- Análisis de Motivos de Pérdida Histórico ---
 st.markdown("---")
 st.header("Análisis de Motivos de Pérdida del Periodo")
 df_perdidos = df_filtered[df_filtered['estado'] == 'Perdido']
