@@ -11,6 +11,7 @@ from PIL import Image
 import streamlit as st
 from datetime import datetime
 import pandas as pd
+import pytz # Importar pytz
 from config import CONFIG
 import visualizations as viz
 
@@ -65,7 +66,11 @@ class PDF(FPDF):
         self.set_text_color(int(CONFIG['colores']['texto'][1:3], 16), int(CONFIG['colores']['texto'][3:5], 16), int(CONFIG['colores']['texto'][5:7], 16))
         self.cell(0, 10, 'Reporte de Análisis de Ventas - Grúas Móviles del Golfo', 0, 1, 'C')
         self.set_font('Arial', '', 8)
-        self.cell(0, 5, f"Generado el: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", 0, 1, 'C')
+        
+        # --- CORRECCIÓN DE ZONA HORARIA (REPORTE) ---
+        local_tz = pytz.timezone('America/Mexico_City')
+        now_local = datetime.now(local_tz)
+        self.cell(0, 5, f"Generado el: {now_local.strftime('%Y-%m-%d %H:%M:%S %Z')}", 0, 1, 'C')
         self.ln(10)
 
     def footer(self):
@@ -222,7 +227,6 @@ class ReportGenerator:
             delta_dias = (df_periodo['created_at'].max() - df_periodo['created_at'].min()).days if not df_periodo.empty else 0
             freq = 'D' if delta_dias <= 15 else 'W' if delta_dias <= 90 else 'M'
             
-            # --- GRÁFICOS RESTAURADOS ---
             img_evolucion = "evolucion_periodo.png"
             viz.crear_grafico_evolucion(df_periodo, img_evolucion, freq=freq, title='Creación de Leads')
             files_to_clean.append(img_evolucion)

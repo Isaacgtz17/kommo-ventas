@@ -11,6 +11,7 @@ import numpy as np
 import unicodedata
 from datetime import datetime
 import streamlit as st
+import pytz # Importar pytz para manejar zonas horarias
 
 from config import CONFIG
 
@@ -38,41 +39,28 @@ def procesar_datos(api_data):
     df['motivo_perdida_nombre'] = df['loss_reason_id'].map(loss_reason_map).fillna('No especificado')
     df['tags'] = df.apply(lambda lead: [tag['name'] for tag in lead.get('_embedded', {},).get('tags', [])], axis=1)
     
+    # --- CORRECCIÓN DE ZONA HORARIA (RAÍZ) ---
+    # 1. Convertir las fechas de la API a datetime y marcarlas como UTC (que es como vienen)
     for col in ['created_at', 'updated_at', 'closed_at']:
-        df[col] = pd.to_datetime(df[col], unit='s', errors='coerce')
+        df[col] = pd.to_datetime(df[col], unit='s', errors='coerce').dt.tz_localize('UTC')
     
     df = df[df['pipeline_nombre'] != CONFIG['pipeline_a_excluir']]
     
-    # =========================================================================
-    # CAMBIO PRINCIPAL: Lógica de asignación de estado actualizada
-    # =========================================================================
-    # Se utiliza np.select para una lógica más clara y escalable.
-    # El orden es importante: primero se evalúan las condiciones más específicas.
-    
     condiciones = [
-        df['etapa_nombre'] == 'Proceso De Cobro', # ¡Asegúrate que este nombre coincida con tu etapa en Kommo!
-        df['status_id'] == 142, # Ganado
-        df['status_id'] == 143  # Perdido
+        df['etapa_nombre'] == 'Proceso De Cobro',
+        df['status_id'] == 142,
+        df['status_id'] == 143
     ]
-    
-    resultados = [
-        'Proceso de Cobro',
-        'Ganado',
-        'Perdido'
-    ]
-    
-    # np.select asigna el estado según las condiciones. Si ninguna se cumple,
-    # asigna el valor 'default', que en este caso es 'En Trámite'.
+    resultados = ['Proceso de Cobro', 'Ganado', 'Perdido']
     df['estado'] = np.select(condiciones, resultados, default='En Trámite')
     
-    # =========================================================================
-    
     df['dias_para_cerrar'] = (df['closed_at'] - df['created_at']).dt.days
-    df['dias_sin_actualizar'] = (datetime.now() - df['updated_at']).dt.days
+    
+    # 2. Calcular 'dias_sin_actualizar' usando la hora actual también en UTC para una comparación correcta
+    now_utc = datetime.now(pytz.utc)
+    df['dias_sin_actualizar'] = (now_utc - df['updated_at']).dt.days
     
     def get_lead_health(row):
-        # La lógica de salud no necesita cambios, ya que "Proceso de Cobro"
-        # no es 'En Trámite', por lo que correctamente devolverá 'N/A'.
         if row['estado'] != 'En Trámite': return 'N/A'
         if row['dias_sin_actualizar'] >= CONFIG['dias_lead_critico']: return 'Crítico'
         if row['dias_sin_actualizar'] >= CONFIG['dias_lead_en_riesgo']: return 'En Riesgo'
