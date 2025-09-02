@@ -190,16 +190,13 @@ class ReportGenerator:
         pdf.add_page()
 
         total_leads = len(df_periodo)
-        ventas_concluidas_df = df_periodo[df_periodo['estado'].isin(['Ganado', 'Proceso de Cobro'])]
+        ventas_concluidas_df = df_periodo[df_periodo['estado'] == 'Ganado']
         total_ventas_concluidas = len(ventas_concluidas_df)
-        en_cobro_df = df_periodo[df_periodo['estado'] == 'Proceso de Cobro']
-        total_en_cobro = len(en_cobro_df)
-        valor_en_cobro = en_cobro_df['price'].sum()
         tasa_conversion = (total_ventas_concluidas / total_leads * 100) if total_leads > 0 else 0
         valor_total_concluido = ventas_concluidas_df['price'].sum()
 
-        kpi_row1 = [("Leads Generados", total_leads), ("Ventas Concluidas", total_ventas_concluidas), ("Tasa Conversión", f"{tasa_conversion:.2f}%")]
-        kpi_row2 = [("Valor Total Concluido", f"${valor_total_concluido:,.2f}"), ("En Proceso de Cobro", total_en_cobro), ("Valor en Cobro", f"${valor_en_cobro:,.2f}")]
+        kpi_row1 = [("Leads Generados", total_leads), ("Ventas Ganadas", total_ventas_concluidas), ("Tasa Conversión", f"{tasa_conversion:.2f}%")]
+        kpi_row2 = [("Valor Total Ganado", f"${valor_total_concluido:,.2f}"), ("Leads Perdidos", len(df_periodo[df_periodo['estado'] == 'Perdido'])), ("En Trámite", len(df_periodo[df_periodo['estado'] == 'En Trámite']))]
         
         pdf.add_kpi_section(title_prefix, [kpi_row1, kpi_row2])
 
@@ -208,21 +205,19 @@ class ReportGenerator:
             rendimiento = df_periodo.groupby('responsable_nombre').agg(
                 Total=('id', 'count'),
                 Ganados=('estado', lambda x: (x == 'Ganado').sum()),
-                Proceso_Cobro=('estado', lambda x: (x == 'Proceso de Cobro').sum()),
                 Perdidos=('estado', lambda x: (x == 'Perdido').sum()),
                 En_Tramite=('estado', lambda x: (x == 'En Trámite').sum()),
-                Valor_Concluido=('price', lambda x: df_periodo.loc[x.index][df_periodo.loc[x.index, 'estado'].isin(['Ganado', 'Proceso de Cobro'])]['price'].sum())
+                Valor_Ganado=('price', lambda x: df_periodo.loc[x.index][df_periodo.loc[x.index, 'estado'] == 'Ganado']['price'].sum())
             ).reset_index()
 
             if not rendimiento.empty:
-                rendimiento['Ventas_Concluidas'] = rendimiento['Ganados'] + rendimiento['Proceso_Cobro']
-                rendimiento['Conversión'] = (rendimiento['Ventas_Concluidas'] / rendimiento['Total'] * 100).apply(lambda x: f"{x:.1f}%")
-                rendimiento['Valor_Concluido'] = rendimiento['Valor_Concluido'].apply(lambda x: f"${x:,.0f}")
+                rendimiento['Conversión'] = (rendimiento['Ganados'] / rendimiento['Total'] * 100).apply(lambda x: f"{x:.1f}%")
+                rendimiento['Valor_Ganado'] = rendimiento['Valor_Ganado'].apply(lambda x: f"${x:,.0f}")
                 
-                columnas_a_seleccionar = ['responsable_nombre', 'Total', 'Ventas_Concluidas', 'Proceso_Cobro', 'Perdidos', 'En_Tramite', 'Valor_Concluido', 'Conversión']
+                columnas_a_seleccionar = ['responsable_nombre', 'Total', 'Ganados', 'Perdidos', 'En_Tramite', 'Valor_Ganado', 'Conversión']
                 rendimiento_final = rendimiento[columnas_a_seleccionar]
-                rendimiento_final.columns = ['Ejecutivo', 'Total', 'Concluidas', 'En Cobro', 'Perdidos', 'Trámite', 'Valor Concluido', 'Conversión']
-                pdf.add_table_section("Tabla de Rendimiento por Ejecutivo", rendimiento_final, col_widths=[45, 15, 20, 20, 20, 20, 30, 20])
+                rendimiento_final.columns = ['Ejecutivo', 'Total', 'Ganados', 'Perdidos', 'Trámite', 'Valor Ganado', 'Conversión']
+                pdf.add_table_section("Tabla de Rendimiento por Ejecutivo", rendimiento_final, col_widths=[45, 15, 20, 20, 20, 30, 20])
 
             delta_dias = (df_periodo['created_at'].max() - df_periodo['created_at'].min()).days if not df_periodo.empty else 0
             freq = 'D' if delta_dias <= 15 else 'W' if delta_dias <= 90 else 'M'
@@ -284,20 +279,21 @@ class ReportGenerator:
 
         def get_kpis(df):
             if df.empty:
-                return {"Leads Generados": 0, "Ventas Concluidas": 0, "Tasa Conversión (%)": 0, "Valor Concluido ($)": 0, "En Proceso de Cobro": 0, "Valor en Cobro ($)": 0}
+                return {"Leads Generados": 0, "Ventas Ganadas": 0, "Tasa Conversión (%)": 0, "Valor Ganado ($)": 0, "Leads Perdidos": 0, "En Trámite": 0}
             
             total_leads = len(df)
-            ventas_concluidas_df = df[df['estado'].isin(['Ganado', 'Proceso de Cobro'])]
-            total_ventas_concluidas = len(ventas_concluidas_df)
-            en_cobro_df = df[df['estado'] == 'Proceso de Cobro']
+            ventas_ganadas_df = df[df['estado'] == 'Ganado']
+            total_ventas_ganadas = len(ventas_ganadas_df)
+            perdidos_df = df[df['estado'] == 'Perdido']
+            en_tramite_df = df[df['estado'] == 'En Trámite']
             
             return {
                 "Leads Generados": total_leads,
-                "Ventas Concluidas": total_ventas_concluidas,
-                "Tasa Conversión (%)": (total_ventas_concluidas / total_leads * 100) if total_leads > 0 else 0,
-                "Valor Concluido ($)": ventas_concluidas_df['price'].sum(),
-                "En Proceso de Cobro": len(en_cobro_df),
-                "Valor en Cobro ($)": en_cobro_df['price'].sum()
+                "Ventas Ganadas": total_ventas_ganadas,
+                "Tasa Conversión (%)": (total_ventas_ganadas / total_leads * 100) if total_leads > 0 else 0,
+                "Valor Ganado ($)": ventas_ganadas_df['price'].sum(),
+                "Leads Perdidos": len(perdidos_df),
+                "En Trámite": len(en_tramite_df)
             }
 
         kpis_a = get_kpis(df_a)

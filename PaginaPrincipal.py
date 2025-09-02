@@ -102,33 +102,24 @@ with st.container(border=True):
     df_today_updated = df_master[df_master['updated_at'].dt.tz_convert(LOCAL_TIMEZONE).dt.date == today_date]
 
     leads_creados_hoy = len(df_today_created)
-    movidos_a_cobro_hoy_df = df_today_updated[df_today_updated['estado'] == 'Proceso de Cobro']
-    movidos_a_cobro_hoy_count = len(movidos_a_cobro_hoy_df)
-    valor_movido_a_cobro_hoy = movidos_a_cobro_hoy_df['price'].sum()
     ganados_hoy_df = df_today_updated[df_today_updated['estado'] == 'Ganado']
     valor_ganado_hoy = ganados_hoy_df['price'].sum()
-    ventas_hoy = len(df_today_updated[df_today_updated['estado'].isin(['Ganado', 'Proceso de Cobro'])])
+    ventas_hoy = len(df_today_updated[df_today_updated['estado'] == 'Ganado'])
     perdidos_hoy = len(df_today_updated[df_today_updated['estado'] == 'Perdido'])
 
-    kpi_today_cols = st.columns(6)
+    kpi_today_cols = st.columns(4)
     with kpi_today_cols[0]:
         with st.container(border=True):
             st.metric("➕ Leads Creados Hoy", leads_creados_hoy)
     with kpi_today_cols[1]:
         with st.container(border=True):
-            st.metric("✅ Ventas Concluidas Hoy", ventas_hoy)
+            st.metric("✅ Ventas Ganadas Hoy", ventas_hoy)
     with kpi_today_cols[2]:
         with st.container(border=True):
             st.metric("❌ Leads Perdidos Hoy", perdidos_hoy)
     with kpi_today_cols[3]:
         with st.container(border=True):
-            st.metric("➡️ Movidos a Cobro Hoy", movidos_a_cobro_hoy_count, help="Leads que cambiaron a 'Proceso de Cobro' hoy.")
-    with kpi_today_cols[4]:
-        with st.container(border=True):
             st.metric("💰 Valor Ganado Hoy", f"${valor_ganado_hoy:,.2f}", help="Suma del valor de los leads que cambiaron a 'Ganado' hoy.")
-    with kpi_today_cols[5]:
-        with st.container(border=True):
-            st.metric("💵 Valor Movido a Cobro", f"${valor_movido_a_cobro_hoy:,.2f}", help="Suma del valor de los leads que cambiaron a 'Proceso de Cobro' hoy.")
 
     st.markdown("<br>", unsafe_allow_html=True)
     with st.container(border=True):
@@ -214,11 +205,11 @@ st.markdown("---")
 st.header("Indicadores Clave del Periodo Seleccionado")
 kpi_cols = st.columns(5)
 total_leads = len(df_filtered)
-ventas_concluidas_df = df_filtered[df_filtered['estado'].isin(['Ganado', 'Proceso de Cobro'])]
-total_ventas_concluidas = len(ventas_concluidas_df)
-tasa_conversion = (total_ventas_concluidas / total_leads * 100) if total_leads > 0 else 0
-ciclo_venta_promedio = ventas_concluidas_df.dropna(subset=['dias_para_cerrar'])['dias_para_cerrar'].mean()
-valor_total_concluido = ventas_concluidas_df['price'].sum()
+ventas_ganadas_df = df_filtered[df_filtered['estado'] == 'Ganado']
+total_ventas_ganadas = len(ventas_ganadas_df)
+tasa_conversion = (total_ventas_ganadas / total_leads * 100) if total_leads > 0 else 0
+ciclo_venta_promedio = ventas_ganadas_df.dropna(subset=['dias_para_cerrar'])['dias_para_cerrar'].mean()
+valor_total_ganado = ventas_ganadas_df['price'].sum()
 
 df_filtered_copy = df_filtered.copy()
 df_filtered_copy['leads_count'] = 1
@@ -227,15 +218,15 @@ with kpi_cols[0]:
     st.metric(label="Leads Generados", value=f"{total_leads}")
     st.plotly_chart(spark_leads, use_container_width=True, key="spark_leads_hist")
 
-ventas_concluidas_df_copy = ventas_concluidas_df.copy()
-ventas_concluidas_df_copy['ventas_count'] = 1
-spark_ventas = create_sparkline(ventas_concluidas_df_copy, 'closed_at', 'ventas_count')
+ventas_ganadas_df_copy = ventas_ganadas_df.copy()
+ventas_ganadas_df_copy['ventas_count'] = 1
+spark_ventas = create_sparkline(ventas_ganadas_df_copy, 'closed_at', 'ventas_count')
 with kpi_cols[1]:
-    st.metric(label="Ventas Concluidas", value=f"{total_ventas_concluidas}")
+    st.metric(label="Ventas Ganadas", value=f"{total_ventas_ganadas}")
     st.plotly_chart(spark_ventas, use_container_width=True, key="spark_ventas_hist")
 
 kpi_cols[2].metric(label="Tasa de Conversión", value=f"{tasa_conversion:.2f}%")
-kpi_cols[3].metric(label="Valor Total Concluido", value=f"${valor_total_concluido:,.2f}")
+kpi_cols[3].metric(label="Valor Total Ganado", value=f"${valor_total_ganado:,.2f}")
 kpi_cols[4].metric(label="Ciclo de Venta Promedio (días)", value=f"{ciclo_venta_promedio:.1f}" if pd.notna(ciclo_venta_promedio) else "N/A")
 
 st.markdown("---")
@@ -245,8 +236,7 @@ colores_config = CONFIG.get('colores', {})
 color_map = {
     'Ganado': colores_config.get('ganado', '#28a745'),
     'En Trámite': colores_config.get('en_tramite', '#ffc107'),
-    'Perdido': colores_config.get('perdido', '#dc3545'),
-    'Proceso de Cobro': colores_config.get('proceso_cobro', '#0d6efd')
+    'Perdido': colores_config.get('perdido', '#dc3545')
 }
 with viz_col1:
     funnel_data = df_filtered.groupby(['responsable_nombre', 'estado']).size().reset_index(name='counts')
@@ -262,14 +252,14 @@ with viz_col2:
 
 st.markdown("---")
 st.header("Datos Detallados del Periodo")
-tab1, tab2 = st.tabs(["🚨 Leads Críticos", "🏆 Ventas Concluidas"])
+tab1, tab2 = st.tabs(["🚨 Leads Críticos", "🏆 Ventas Ganadas"])
 with tab1:
     leads_criticos = df_filtered[df_filtered['salud_lead'] == 'Crítico']
     st.data_editor(leads_criticos[['name', 'responsable_nombre', 'created_at', 'updated_at', 'dias_sin_actualizar']],
                    column_config={"dias_sin_actualizar": st.column_config.ProgressColumn("Días sin Actualizar", help="Días desde la última actualización", format="%f días", min_value=0, max_value=int(leads_criticos['dias_sin_actualizar'].max()) if not leads_criticos.empty else 100)},
                    hide_index=True, use_container_width=True)
 with tab2:
-    st.data_editor(ventas_concluidas_df[['name', 'responsable_nombre', 'estado', 'price', 'closed_at', 'dias_para_cerrar']],
+    st.data_editor(ventas_ganadas_df[['name', 'responsable_nombre', 'estado', 'price', 'closed_at', 'dias_para_cerrar']],
                    column_config={"price": st.column_config.NumberColumn("Valor", format="$ %d")},
                    hide_index=True, use_container_width=True)
 

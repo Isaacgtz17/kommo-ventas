@@ -46,12 +46,12 @@ def procesar_datos(api_data):
     
     df = df[df['pipeline_nombre'] != CONFIG['pipeline_a_excluir']]
     
+    # Unificar 'Proceso de Cobro' y 'Ganado' como 'Ganado'
     condiciones = [
-        df['etapa_nombre'] == 'Proceso De Cobro',
-        df['status_id'] == 142,
+        (df['etapa_nombre'] == 'Proceso De Cobro') | (df['status_id'] == 142),
         df['status_id'] == 143
     ]
-    resultados = ['Proceso de Cobro', 'Ganado', 'Perdido']
+    resultados = ['Ganado', 'Perdido']
     df['estado'] = np.select(condiciones, resultados, default='En Trámite')
     
     df['dias_para_cerrar'] = (df['closed_at'] - df['created_at']).dt.days

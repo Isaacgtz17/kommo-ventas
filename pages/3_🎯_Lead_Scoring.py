@@ -32,14 +32,14 @@ def get_contact_name(row):
 @st.cache_data
 def prepare_scoring_data(df):
     """Prepara los datos históricos para el cálculo de puntuaciones."""
-    df_historico = df[df['estado'].isin(['Ganado', 'Proceso de Cobro', 'Perdido'])].copy()
+    df_historico = df[df['estado'].isin(['Ganado', 'Perdido'])].copy()
     
     # 1. Historial de Clientes (con obtención de nombre segura)
     df_historico['nombre_cliente'] = df_historico.apply(get_contact_name, axis=1)
     
     client_history = df_historico.groupby('nombre_cliente').agg(
         total_deals=('id', 'count'),
-        deals_won=('estado', lambda x: x.isin(['Ganado', 'Proceso de Cobro']).sum())
+        deals_won=('estado', lambda x: (x == 'Ganado').sum())
     )
     client_history['win_rate'] = client_history['deals_won'] / client_history['total_deals']
     
@@ -47,7 +47,7 @@ def prepare_scoring_data(df):
     df_tags = df_historico.explode('tags').dropna(subset=['tags'])
     tag_history = df_tags.groupby('tags').agg(
         total_requests=('id', 'count'),
-        requests_won=('estado', lambda x: x.isin(['Ganado', 'Proceso de Cobro']).sum())
+        requests_won=('estado', lambda x: (x == 'Ganado').sum())
     )
     tag_history['win_rate'] = tag_history['requests_won'] / tag_history['total_requests']
     
@@ -120,7 +120,7 @@ if df_master is None or df_master.empty:
 client_history, tag_history = prepare_scoring_data(df_master)
 
 # Filtrar solo leads activos
-df_active = df_master[df_master['estado'].isin(['En Trámite', 'Proceso de Cobro'])].copy()
+df_active = df_master[df_master['estado'] == 'En Trámite'].copy()
 
 if df_active.empty:
     st.info("No hay leads activos para puntuar en este momento.")

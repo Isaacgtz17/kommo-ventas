@@ -6,31 +6,104 @@ from matplotlib.ticker import FuncFormatter
 import seaborn as sns
 import textwrap
 import pandas as pd
+import locale
+from datetime import datetime
 from config import CONFIG # Importar la configuración para usar los colores
 
+# Configurar locale para fechas en español (o sistema por defecto si falla)
+try:
+    locale.setlocale(locale.LC_TIME, 'es_ES.UTF-8')
+except:
+    try:
+        locale.setlocale(locale.LC_TIME, 'Spanish_Spain.1252')
+    except:
+        pass  # Usar configuración por defecto del sistema
+
 def crear_grafico_evolucion(df, filename, freq='M', title='Evolución de Nuevos Leads'):
+    if df.empty:
+        return
+        
     fig, ax = plt.subplots(figsize=(12, 6))
-    data = df.set_index('created_at').resample(freq).size()
+    
+    # Preparar los datos asegurando el timezone correcto
+    df_copy = df.copy()
+    
+    # Convertir created_at a timezone local para el procesamiento
+    if df_copy['created_at'].dt.tz is not None:
+        # Si tiene timezone, convertir a local
+        df_copy['created_at'] = df_copy['created_at'].dt.tz_convert('America/Mexico_City')
+    
+    # Crear la serie de datos agrupados por fecha
+    data = df_copy.set_index('created_at').resample(freq).size()
+    
+    if data.empty:
+        plt.close()
+        return
+    
     freq_map = {'D': 'Diario', 'W': 'Semanal', 'M': 'Mensual'}
     full_title = f"{title} ({freq_map.get(freq, '')})"
-    data.plot(marker='o', linestyle='-', color=CONFIG['colores']['texto'], zorder=1, ax=ax)
-    if freq == 'D':
-        def date_formatter(x, pos):
-            dt = mdates.num2date(x)
-            return f"{dt:%d}" if pos != 0 else f"{dt:%d\n%b\n%Y}"
-        ax.xaxis.set_major_formatter(FuncFormatter(date_formatter))
-        ax.xaxis.set_major_locator(mdates.DayLocator())
-    elif freq == 'W':
-        ax.xaxis.set_major_formatter(mdates.DateFormatter('%d-%b'))
-    if not data.empty and freq == 'M':
+    
+    # Plotear los datos usando matplotlib
+    ax.plot(data.index, data.values, marker='o', linestyle='-', color=CONFIG['colores']['texto'], linewidth=2, markersize=6)
+    
+    # Configurar las etiquetas del eje X manualmente usando los índices de pandas
+    if len(data) > 0:
+        # Determinar si necesitamos mostrar el año (si hay datos de diferentes años o no es el año actual)
+        current_year = datetime.now().year
+        data_years = set(date.year for date in data.index)
+        show_year = len(data_years) > 1 or current_year not in data_years
+        
+        # Crear etiquetas personalizadas basadas en los datos reales
+        tick_positions = []
+        tick_labels = []
+        
+        for i, (date, value) in enumerate(data.items()):
+            if freq == 'D':
+                if show_year:
+                    label = f"{date.day:02d}/{date.month:02d}/{date.year}"
+                else:
+                    label = f"{date.day:02d}/{date.month:02d}"
+            elif freq == 'W':
+                if show_year:
+                    label = f"{date.day:02d}/{date.month:02d}/{date.year}"
+                else:
+                    label = f"{date.day:02d}/{date.month:02d}"
+            elif freq == 'M':
+                label = f"{date.month:02d}/{date.year}"
+            else:
+                if show_year:
+                    label = f"{date.day:02d}/{date.month:02d}/{date.year}"
+                else:
+                    label = f"{date.day:02d}/{date.month:02d}"
+            
+            tick_positions.append(date)
+            tick_labels.append(label)
+        
+        # Limitar el número de etiquetas si hay demasiadas
+        if len(tick_positions) > 10:
+            step = len(tick_positions) // 8
+            tick_positions = tick_positions[::step]
+            tick_labels = tick_labels[::step]
+        
+        ax.set_xticks(tick_positions)
+        ax.set_xticklabels(tick_labels, rotation=45, ha='right')
+    
+    # Destacar el último punto para datos mensuales
+    if freq == 'M' and not data.empty:
         last_date, last_value = data.index[-1], data.iloc[-1]
         ax.plot(last_date, last_value, 'o', markersize=12, color=CONFIG['colores']['secundario'], zorder=5)
         ax.annotate(f'{last_value}', (last_date, last_value), textcoords="offset points", xytext=(0, 15), ha='center', fontsize=12, fontweight='bold')
+    
     ax.set_title(full_title, fontsize=16, color=CONFIG['colores']['texto'])
     ax.set_ylabel('Cantidad de Leads')
     ax.set_xlabel('Fecha de Creación')
+    
+    # Añadir grid para mejor legibilidad
+    ax.grid(True, alpha=0.3)
+    
+    # Ajustar el layout
     fig.tight_layout()
-    fig.savefig(filename)
+    fig.savefig(filename, dpi=300, bbox_inches='tight')
     plt.close()
 
 def crear_grafico_evolucion_comparativo(df_a, df_b, filename):
@@ -108,7 +181,7 @@ def crear_funnel_ejecutivo(df, filename):
     funnel_data = df.groupby(['responsable_nombre', 'estado']).size().unstack(fill_value=0)
     if funnel_data.empty: return
 
-    order = ['Ganado', 'Proceso de Cobro', 'En Trámite', 'Perdido']
+    order = ['Ganado', 'En Trámite', 'Perdido']
     
     for col in order:
         if col not in funnel_data.columns:
@@ -118,7 +191,6 @@ def crear_funnel_ejecutivo(df, filename):
 
     funnel_colors = [
         CONFIG['colores'].get('ganado', '#28a745'),
-        CONFIG['colores'].get('proceso_cobro', '#0d6efd'),
         CONFIG['colores'].get('en_tramite', '#ffc107'),
         CONFIG['colores'].get('perdido', '#dc3545')
     ]
