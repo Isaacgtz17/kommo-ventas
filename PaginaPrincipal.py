@@ -269,25 +269,157 @@ df_perdidos = df_filtered[df_filtered['estado'] == 'Perdido']
 if df_perdidos.empty:
     st.info("No hay leads perdidos en el periodo seleccionado para analizar.")
 else:
-    loss_reason_counts = df_perdidos['motivo_perdida_nombre'].value_counts().reset_index()
-    loss_reason_counts.columns = ['motivo', 'cantidad']
-    fig_loss = px.bar(loss_reason_counts, x='cantidad', y='motivo', orientation='h', title='Principales Motivos de Pérdida', labels={'cantidad': 'Cantidad de Leads', 'motivo': 'Motivo de Pérdida'})
-    fig_loss.update_layout(yaxis={'categoryorder':'total ascending'})
-    st.plotly_chart(fig_loss, use_container_width=True)
+    # --- FILA 1: Gráfica de Barras y Pie de Impacto ---
+    col_loss1, col_loss2 = st.columns([1.5, 1])
     
-    with st.expander("Ver todos los motivos de pérdida detectados en el periodo"):
-        st.dataframe(loss_reason_counts)
+    with col_loss1:
+        # Gráfica de barras de principales motivos
+        loss_reason_counts = df_perdidos['motivo_perdida_nombre'].value_counts().reset_index()
+        loss_reason_counts.columns = ['motivo', 'cantidad']
+        fig_loss = px.bar(
+            loss_reason_counts, 
+            x='cantidad', 
+            y='motivo', 
+            orientation='h', 
+            title='Principales Motivos de Pérdida',
+            labels={'cantidad': 'Cantidad de Leads', 'motivo': 'Motivo de Pérdida'},
+            text='cantidad'
+        )
+        fig_loss.update_layout(yaxis={'categoryorder':'total ascending'})
+        fig_loss.update_traces(textposition='outside', marker_color='#1f77b4')
+        st.plotly_chart(fig_loss, use_container_width=True)
+    
+    with col_loss2:
+        # Clasificar motivos en Operativos vs Factores Externos
+        motivos_operativos = ['Unidad ocupada', 'Unidad sin operador', 'Unidad fuera de servicio', 'Sin unidades disponibles']
         
+        df_perdidos_copy = df_perdidos.copy()
+        def clasificar_impacto(motivo):
+            if pd.isna(motivo):
+                return 'Factores del Cliente\n/ Mercado'
+            motivo_lower = motivo.lower()
+            for m in motivos_operativos:
+                if m.lower() in motivo_lower:
+                    return 'Capacidad Operativa\n(Flota/Personal)'
+            return 'Factores del Cliente\n/ Mercado'
+        
+        df_perdidos_copy['impacto'] = df_perdidos_copy['motivo_perdida_nombre'].apply(clasificar_impacto)
+        impacto_counts = df_perdidos_copy['impacto'].value_counts().reset_index()
+        impacto_counts.columns = ['impacto', 'cantidad']
+        
+        fig_impacto = px.pie(
+            impacto_counts, 
+            values='cantidad', 
+            names='impacto', 
+            title='Clasificación de Pérdidas',
+            color='impacto',
+            color_discrete_map={
+                'Capacidad Operativa\n(Flota/Personal)': '#ff9999',
+                'Factores del Cliente\n/ Mercado': '#66b3ff'
+            }
+        )
+        fig_impacto.update_traces(textposition='inside', textinfo='percent+label', textfont_size=11)
+        fig_impacto.update_layout(showlegend=False)
+        st.plotly_chart(fig_impacto, use_container_width=True)
+    
+    # --- FILA 2: Unidades Críticas (Demanda Insatisfecha) ---
+    st.markdown("#### Unidades Críticas: Demanda Insatisfecha")
+    
+    # Filtrar pérdidas por "Unidad ocupada" para ver qué unidades tienen más demanda insatisfecha
+    df_ocupada = df_perdidos[df_perdidos['motivo_perdida_nombre'].str.contains('ocupada', case=False, na=False)]
+    
+    if not df_ocupada.empty:
+        # Explotar tags para contar qué unidades se solicitaron más
+        tags_ocupada = df_ocupada.explode('tags')['tags'].value_counts().reset_index()
+        tags_ocupada.columns = ['unidad', 'cantidad']
+        tags_ocupada = tags_ocupada[tags_ocupada['unidad'].notna()].head(10)
+        
+        if not tags_ocupada.empty:
+            fig_criticas = px.bar(
+                tags_ocupada,
+                x='cantidad',
+                y='unidad',
+                orientation='h',
+                title='Unidades Críticas: Demanda Insatisfecha ("Unidad Ocupada")',
+                labels={'cantidad': 'Cantidad de Ventas Perdidas', 'unidad': ''},
+                text='cantidad'
+            )
+            fig_criticas.update_layout(
+                yaxis={'categoryorder':'total ascending'},
+                xaxis=dict(showgrid=True, gridcolor='lightgray', gridwidth=1, dtick=1)
+            )
+            fig_criticas.update_traces(textposition='outside', marker_color='#d62728')
+            st.plotly_chart(fig_criticas, use_container_width=True)
+            
+            st.info("💡 **Insight:** Estas unidades tienen alta demanda pero no pudieron atender al cliente. Considera aumentar la disponibilidad o adquirir más unidades de este tipo.")
+        else:
+            st.write("No hay datos de unidades específicas para este análisis.")
+    else:
+        st.write("No hay pérdidas por 'Unidad ocupada' en este periodo.")
+    
+    # --- FILA 3: Mapa de Calor - Motivos por Vendedor ---
+    st.markdown("#### Mapa de Calor: Motivos de Pérdida por Vendedor")
+    
+    # Crear tabla pivote para el mapa de calor
+    df_heatmap = df_perdidos.copy()
+    df_heatmap['motivo_corto'] = df_heatmap['motivo_perdida_nombre'].apply(lambda x: 
+        'Unidad ocupada' if pd.notna(x) and 'ocupada' in x.lower() else
+        'Sin respuesta' if pd.notna(x) and 'respuesta' in x.lower() else
+        'Cuadro comparativo' if pd.notna(x) and 'comparativo' in x.lower() else
+        'Descuento' if pd.notna(x) and 'descuento' in x.lower() else
+        'Fuera de servicio' if pd.notna(x) and 'fuera' in x.lower() else
+        'Sin operador' if pd.notna(x) and 'operador' in x.lower() else
+        'Baja demanda' if pd.notna(x) and 'demanda' in x.lower() else
+        'No especificado' if pd.isna(x) or x == '' else
+        x[:15] if len(str(x)) > 15 else x
+    )
+    
+    # Acortar nombres de vendedores
+    df_heatmap['vendedor_corto'] = df_heatmap['responsable_nombre'].apply(lambda x: 
+        ' '.join(str(x).split()[:2]) if pd.notna(x) else 'Sin asignar'
+    )
+    
+    pivot_table = pd.crosstab(df_heatmap['motivo_corto'], df_heatmap['vendedor_corto'])
+    
+    if not pivot_table.empty and pivot_table.shape[0] > 1 and pivot_table.shape[1] > 1:
+        fig_heatmap = px.imshow(
+            pivot_table.values,
+            x=pivot_table.columns.tolist(),
+            y=pivot_table.index.tolist(),
+            title='Mapa de Calor: Motivos de Pérdida por Vendedor',
+            labels=dict(x="Vendedor", y="Motivo", color="Cantidad"),
+            color_continuous_scale='Blues',
+            text_auto=True,
+            aspect='auto'
+        )
+        fig_heatmap.update_layout(
+            xaxis_title="",
+            yaxis_title="Motivo"
+        )
+        st.plotly_chart(fig_heatmap, use_container_width=True)
+        
+        # Insights automáticos
+        max_perdidas_vendedor = pivot_table.sum(axis=0).idxmax()
+        max_perdidas_motivo = pivot_table.sum(axis=1).idxmax()
+        st.info(f"📊 **Análisis Rápido:** El vendedor con más pérdidas es **{max_perdidas_vendedor}** y el motivo más frecuente es **{max_perdidas_motivo}**.")
+    else:
+        st.write("No hay suficientes datos para generar el mapa de calor.")
+    
+    # --- FILA 4: Análisis Detallado por Etiquetas (Tablas) ---
     st.markdown("#### Análisis Detallado por Etiquetas")
+    
     def create_loss_reason_analysis(df_perdidos, reason_text, expander_title, column_title):
-        with st.expander(expander_title):
+        with st.expander(expander_title, expanded=True):
             df_reason = df_perdidos[df_perdidos['motivo_perdida_nombre'].str.contains(reason_text, case=False, na=False)]
             if df_reason.empty:
                 st.write("No se perdieron leads por este motivo en el periodo seleccionado.")
+                return None
             else:
                 tags_count = df_reason.explode('tags')['tags'].value_counts().reset_index()
                 tags_count.columns = ['Unidad (Etiqueta)', column_title]
-                st.dataframe(tags_count, use_container_width=True)
+                tags_count = tags_count[tags_count['Unidad (Etiqueta)'].notna()]
+                st.dataframe(tags_count, use_container_width=True, hide_index=True)
+                return tags_count
 
     motivos_a_analizar = {
         'Unidad Ocupada': 'Veces Solicitada',
@@ -298,3 +430,17 @@ else:
     for i, (motivo, col_title) in enumerate(motivos_a_analizar.items()):
         with cols[i]:
             create_loss_reason_analysis(df_perdidos, motivo, f"Análisis de '{motivo}'", col_title)
+    
+    # --- Resumen Ejecutivo de Pérdidas ---
+    with st.expander("📋 Ver Resumen Ejecutivo de Pérdidas", expanded=False):
+        total_perdidos = len(df_perdidos)
+        valor_perdido = df_perdidos['price'].sum()
+        
+        col_resumen1, col_resumen2, col_resumen3 = st.columns(3)
+        col_resumen1.metric("Total Leads Perdidos", total_perdidos)
+        col_resumen2.metric("Valor Total Perdido", f"${valor_perdido:,.2f}")
+        col_resumen3.metric("Promedio por Lead", f"${valor_perdido/total_perdidos:,.2f}" if total_perdidos > 0 else "$0")
+        
+        st.markdown("**Detalle completo de motivos:**")
+        st.dataframe(loss_reason_counts, use_container_width=True, hide_index=True)
+
